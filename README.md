@@ -7,6 +7,6 @@ Simple Golang data api using:
 Most tasks are automated with a `Makefile`.
 
 ## Purpose
-Created to test API use cases in Kubernetes with network plumbing.
+Created to test API use cases in Kubernetes, with associated network plumbing in AWS.
 
 ## WARNING: Not production ready!
