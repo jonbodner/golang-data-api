@@ -9,11 +9,12 @@ GIT_COMMIT ?= $(shell git rev-parse HEAD)
 TIMESTAMP := $(shell date '+%Y-%m-%d_%I:%M:%S%p')
 REGION ?= us-east-2
 IMAGE_REGISTRY ?= <REGISTRY>
-IMAGE_REPO ?= go-data-api
+IMAGE_REPO ?= <REPO>
 DOCKERFILE ?= Dockerfile
 NO_CACHE ?= true
 GIT_COMMIT_IN ?=
 GIT_URL_IN ?=
+GO_MOD_PATH ?= jimmyray.io/data-api/main
 
 ifeq ($(strip $(GIT_COMMIT)),)
 GIT_COMMIT := $(GIT_COMMIT_IN)
@@ -34,7 +35,7 @@ else
 VERSION := $(VERSION_FROM_FILE)-$(VERSION_HASH)
 endif
 
-.PHONY: build push pull meta clean compile
+.PHONY: build push pull meta clean compile init check
 
 build:	meta
 	$(info    [BUILD_CONTAINER_IMAGE])
@@ -69,3 +70,14 @@ compile:	clean	meta
 
 clean:
 	-@rm main.bin
+
+init:
+	-@rm go.mod
+	-@rm go.sum
+	go mod init $(GO_MOD_PATH)
+	go mod tidy
+
+check:
+	-go vet main
+	-golangci-lint run
+

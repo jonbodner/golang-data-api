@@ -13,22 +13,18 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/google/uuid"
+
+	"github.com/go-playground/validator/v10"
 )
 
 type data struct {
-	ID      string `json:"ID"`
-	Message string `json:"Message"`
+	ID      string `json:"ID" validate:"required"`
+	Message string `json:"Message" validate:"required"`
 }
 
 func (d data) String() string {
 	return fmt.Sprintf("ID:%s,Message:%s", d.ID, d.Message)
 }
-
-var incorrectInputError string = "Please check submission: {\"ID\":\"<ID_VALUE>\",\"Message\":\"<MESSAGE_VALUE>\"}"
-
-var serviceName string
-
-var serviceId uuid.UUID = uuid.New()
 
 var emptyData = data{}
 
@@ -46,7 +42,29 @@ func (a allData) String() string {
 
 var serviceData allData
 
+type info struct {
+	NAME string `json:"service-name"`
+	ID   string `json:"service-id"`
+}
+
+func (i info) String() string {
+	out, err := json.Marshal(i)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(out)
+}
+
+var serviceInfo = info{}
+
+var incorrectInputError string = "Please check submission: {\"ID\":\"<ID_VALUE>\",\"Message\":\"<MESSAGE_VALUE>\"}"
+
+var serviceId uuid.UUID = uuid.New()
+
 var standardFields log.Fields
+
+var validate *validator.Validate
 
 func logErrors(event string, message string, errorData ...string) {
 	_, fileName, line, _ := runtime.Caller(1)
@@ -57,8 +75,8 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "OK")
 }
 
-func serviceInfo(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Service Name: %s, Service Instance ID: %s", serviceName, serviceId.String())
+func getServiceInfo(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, serviceInfo.String())
 }
 
 func searchData(dataID string) (foundData data) {
@@ -77,12 +95,36 @@ func createData(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logErrors("read-all", incorrectInputError)
 		fmt.Fprint(w, incorrectInputError)
+		return
+	}
+
+	if !json.Valid(input) {
+		logErrors("json-not-welformed", "", string(input))
+		fmt.Fprint(w, incorrectInputError)
+		return
 	}
 
 	err = json.Unmarshal(input, &newData)
 	if err != nil {
-		logErrors("unmarshal", incorrectInputError, newData.String())
+		logErrors("unmarshal", "", newData.String())
 		fmt.Fprint(w, incorrectInputError)
+		return
+	}
+
+	err = validate.Struct(newData)
+	if err != nil {
+		if _, ok := err.(*validator.InvalidValidationError); ok {
+			logErrors("validate-errors", "", err.Error())
+		}
+
+		for _, err := range err.(validator.ValidationErrors) {
+			logErrors("validate-errors", fmt.Sprintf("[%s,%s]", err.Field(), err.Tag()))
+		}
+
+		logErrors("invalid-data-struct", "", newData.String())
+		fmt.Fprint(w, incorrectInputError)
+
+		return
 	}
 
 	foundData := searchData(newData.ID)
@@ -93,6 +135,7 @@ func createData(w http.ResponseWriter, r *http.Request) {
 		err = json.NewEncoder(w).Encode(newData)
 		if err != nil {
 			logErrors("encode", "JSON Encoding in createData", newData.String())
+			return
 		}
 	} else {
 		w.WriteHeader(http.StatusConflict)
@@ -116,7 +159,7 @@ func getAllData(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	err := json.NewEncoder(w).Encode(serviceData)
 	if err != nil {
-		logErrors("unmarshal", incorrectInputError, serviceData.String())
+		logErrors("unmarshal", "", serviceData.String())
 	}
 }
 
@@ -128,12 +171,36 @@ func updateData(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logErrors("read", incorrectInputError)
 		fmt.Fprint(w, incorrectInputError)
+		return
+	}
+
+	if !json.Valid(input) {
+		logErrors("json-not-welformed", "", string(input))
+		fmt.Fprint(w, incorrectInputError)
+		return
 	}
 
 	err = json.Unmarshal(input, &updatedData)
 	if err != nil {
-		logErrors("unmarshal", incorrectInputError, updatedData.String())
+		logErrors("unmarshal", "", updatedData.String())
 		fmt.Fprint(w, incorrectInputError)
+		return
+	}
+
+	err = validate.Struct(updatedData)
+	if err != nil {
+		if _, ok := err.(*validator.InvalidValidationError); ok {
+			logErrors("validate-errors", "", err.Error())
+		}
+
+		for _, err := range err.(validator.ValidationErrors) {
+			logErrors("validate-errors", fmt.Sprintf("[%s,%s]", err.Field(), err.Tag()))
+		}
+
+		logErrors("invalid-data-struct", "", updatedData.String())
+		fmt.Fprint(w, incorrectInputError)
+
+		return
 	}
 
 	for i, singleData := range serviceData {
@@ -141,7 +208,6 @@ func updateData(w http.ResponseWriter, r *http.Request) {
 			if singleData != updatedData {
 				singleData.Message = updatedData.Message
 				serviceData = append(serviceData[:i], singleData)
-				//w.WriteHeader(http.StatusOK)
 				err = json.NewEncoder(w).Encode(singleData)
 				if err != nil {
 					logErrors("encode", "JSON encoding failed", singleData.String())
@@ -177,7 +243,7 @@ func initService() {
 		os.Exit(1)
 	}
 
-	serviceName = os.Args[1]
+	serviceInfo = info{os.Args[1], serviceId.String()}
 
 	hostName, err := os.Hostname()
 	if err != nil {
@@ -186,13 +252,15 @@ func initService() {
 
 	standardFields = log.Fields{
 		"hostname": hostName,
-		"service":  serviceName,
-		"id":       serviceId.String(),
+		"service":  serviceInfo.NAME,
+		"id":       serviceInfo.ID,
 	}
 
 	log.SetFormatter(&log.JSONFormatter{})
 
 	log.WithFields(standardFields).WithFields(log.Fields{"args": os.Args, "mode": "init"}).Info("Service started successfully.")
+
+	validate = validator.New()
 }
 
 func main() {
@@ -201,7 +269,7 @@ func main() {
 
 	router := mux.NewRouter().StrictSlash(true)
 	router.HandleFunc("/healthz", healthCheck)
-	router.HandleFunc("/info", serviceInfo)
+	router.HandleFunc("/info", getServiceInfo).Methods("GET")
 	router.HandleFunc("/data", getAllData).Methods("GET")
 	router.HandleFunc("/data", createData).Methods("PUT")
 	router.HandleFunc("/data/{id}", getData).Methods("GET")
@@ -210,5 +278,5 @@ func main() {
 
 	log.WithFields(standardFields).WithFields(log.Fields{"mode": "run"}).Info("Listening on port 8080")
 
-	http.ListenAndServe(":8080", router)
+	fmt.Println(http.ListenAndServe(":8080", router))
 }
