@@ -1,4 +1,4 @@
-module jimmyray.io/data-api/main
+module jimmyray.io/data-api
 
 go 1.17
 
