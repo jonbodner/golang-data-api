@@ -3,18 +3,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	Log "github.com/sirupsen/logrus"
 	"io/ioutil"
-	"jimmyray.io/data-api/api"
-	"jimmyray.io/data-api/utils"
 	"net/http"
 	"os"
+
+	Log "github.com/sirupsen/logrus"
+	"jimmyray.io/data-api/api"
+	"jimmyray.io/data-api/utils"
 
 	"github.com/gorilla/mux"
 )
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
-	utils.Logger.WithFields(utils.StandardFields).WithFields(Log.Fields{"mode": "run"}).Debug("Listening on port 8080")
 	_, _ = fmt.Fprintln(w, "OK")
 }
 
